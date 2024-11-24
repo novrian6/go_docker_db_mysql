@@ -4,7 +4,7 @@ services:
     build: ./api
     container_name: go-api-container
     ports:
-      - "8080:8080"
+      - "8100:8080"  # Expose port 8080 inside the container as port 8100 on the host
     environment:
       - DB_HOST=db
       - DB_USER=root

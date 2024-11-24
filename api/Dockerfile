@@ -1,5 +1,5 @@
-# Use an official Golang image to build the Go application
-FROM golang:1.18-alpine
+# Use a newer Golang version that supports Go 1.23
+FROM golang:1.23-alpine
 
 # Set the current working directory inside the container
 WORKDIR /usr/src/app
