@@ -1,20 +1,23 @@
-# Start with the official Golang base image
+# Use an official Golang image to build the Go application
 FROM golang:1.18-alpine
 
-# Set the working directory in the container
+# Set the current working directory inside the container
 WORKDIR /usr/src/app
 
-# Copy the Go files into the container
-COPY . .
+# Copy the Go module and sum files
+COPY go.mod go.sum ./
 
-# Install dependencies
+# Download Go module dependencies (this will be cached if the go.mod and go.sum files are not changed)
 RUN go mod tidy
+
+# Copy the source code into the container
+COPY . .
 
 # Build the Go app
 RUN go build -o main .
 
-# Expose the API port
+# Expose the port the API will run on
 EXPOSE 8080
 
-# Command to run the API
+# Run the Go app
 CMD ["./main"]
