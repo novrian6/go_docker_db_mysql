@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -11,58 +12,76 @@ import (
 
 var db *sql.DB
 
-// Initialize DB connection and create the messages table
-func init() {
+func main() {
+	// Connect to the database
 	var err error
-	db, err = sql.Open("mysql", "root:rootpassword@tcp(db:3306)/testdb")
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:3306)/%s", "root", "rootpassword", "db", "testdb")
+	db, err = sql.Open("mysql", dsn)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Failed to connect to the database: %v", err)
 	}
+	defer db.Close()
 
-	// Ensure the messages table exists
-	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS messages (
-		id INT AUTO_INCREMENT PRIMARY KEY,
-		content VARCHAR(255) NOT NULL,
-		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-	);`)
-	if err != nil {
-		log.Fatal(err)
-	}
+	// Define the routes
+	http.HandleFunc("/add-message", addMessage)
+	http.HandleFunc("/display-messages", displayMessages)
+
+	// Start the server on port 8080
+	log.Println("Starting server on port 8080...")
+	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
-// Fetch all messages from the database
-func getMessages(w http.ResponseWriter, r *http.Request) {
-	rows, err := db.Query("SELECT id, content, created_at FROM messages")
+// addMessage handles adding a new message to the database
+func addMessage(w http.ResponseWriter, r *http.Request) {
+	content := r.URL.Query().Get("content")
+	if content == "" {
+		http.Error(w, "Content is required", http.StatusBadRequest)
+		return
+	}
+
+	// Insert the message into the database
+	_, err := db.Exec("INSERT INTO messages (content) VALUES (?)", content)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Failed to insert message into the database", http.StatusInternalServerError)
+		log.Printf("Database error: %v", err)
+		return
+	}
+
+	// Respond with success
+	fmt.Fprintf(w, "Message added successfully: %s", content)
+}
+
+// displayMessages handles retrieving and displaying all messages from the database
+func displayMessages(w http.ResponseWriter, r *http.Request) {
+	rows, err := db.Query("SELECT id, content FROM messages")
+	if err != nil {
+		http.Error(w, "Failed to retrieve messages from the database", http.StatusInternalServerError)
+		log.Printf("Database error: %v", err)
 		return
 	}
 	defer rows.Close()
 
-	var messages []string
+	// Prepare a slice to store messages
+	var messages []map[string]interface{}
+
 	for rows.Next() {
 		var id int
 		var content string
-		var createdAt string
-		if err := rows.Scan(&id, &content, &createdAt); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+		if err := rows.Scan(&id, &content); err != nil {
+			http.Error(w, "Failed to parse messages", http.StatusInternalServerError)
+			log.Printf("Scan error: %v", err)
 			return
 		}
-		messages = append(messages, fmt.Sprintf("ID: %d, Content: %s, CreatedAt: %s", id, content, createdAt))
+		messages = append(messages, map[string]interface{}{
+			"id":      id,
+			"content": content,
+		})
 	}
 
-	if err := rows.Err(); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+	// Convert the messages to JSON and send as a response
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(messages); err != nil {
+		http.Error(w, "Failed to encode messages to JSON", http.StatusInternalServerError)
+		log.Printf("JSON encoding error: %v", err)
 	}
-
-	for _, msg := range messages {
-		fmt.Fprintln(w, msg)
-	}
-}
-
-func main() {
-	http.HandleFunc("/messages", getMessages)
-	fmt.Println("Server is running on port 8080...")
-	log.Fatal(http.ListenAndServe(":8080", nil))
 }
